@@ -186,7 +186,8 @@ def generate_population(parameterfile, populationfile,
     allele_count = [str(len(pop_param[gene])) for gene in gene_sequence]
     stdout = '%s>%s' % ("|".join(gene_sequence), "|".join(allele_count))
     pop_file.write(stdout + "\n")
-    print(stdout)
+    # print(stdout)
+    print("Number of Genes = %i" % len(gene_sequence))
     for gene in gene_sequence:
         allelic_frequency = ["%.5f" % pop_param[gene][0]] + \
             ["%.5f" % (pop_param[gene][i] - pop_param[gene][i-1]) 
@@ -194,7 +195,7 @@ def generate_population(parameterfile, populationfile,
         stdout = "A>%s>" % gene
         stdout = stdout + "|".join([str(af) for af in allelic_frequency])
         pop_file.write(stdout + "\n")
-        print(stdout)
+        # print(stdout)
     for organism_count in range(int(population_size)):
         organism = _generate_organism(pop_param, gene_sequence, ploidy)
         stdout = "O>%s|%s|0|0>%s" % \
@@ -202,7 +203,10 @@ def generate_population(parameterfile, populationfile,
              ";".join(["|".join([str(allele) for allele in ploid]) 
                         for ploid in organism]))
         pop_file.write(stdout + "\n")
-        print(stdout)
+        # print(stdout)
+        if (organism_count + 1) % 100 == 0:
+            print("%s organisms generated" % str(organism_count + 1))
+    print("Total %s organisms generated" % str(organism_count + 1))
     pop_file.close()
 
 ######################################################################
@@ -227,9 +231,12 @@ def _simulation_writeout(filename, organisms, headerData):
     for organism in organisms:
         genome = ["|".join(organisms[organism]['genome'][i]) 
                   for i in range(organisms[organism]['polyploid'])]
-        stdout = "O>%s|%s|0|0>%s" % (str(organisms[organism]['organism']), 
-                                     str(organisms[organism]['generation']), 
-                                     str(";".join(genome)))
+        stdout = "O>%s|%s|%s|%s>%s" % \
+            (str(organisms[organism]['organism']), 
+             str(organisms[organism]['generation']), 
+             str(organisms[organism]['parentA']),
+             str(organisms[organism]['parentB']),
+             str(";".join(genome)))
         outputfile.write(stdout + "\n")
     outputfile.close()
 
@@ -243,7 +250,7 @@ def simulate_simple(populationfile, generations, organisms,
         - one random crossover per chromosome pair
         - crossover is generated prior to mating to simulate random haploid
         - no mutations
-        - random mating with possibility of self-mating
+        - random mating without possibility of self-mating
         - mating only within generation
         - population size may be changed
 
@@ -282,9 +289,11 @@ def simulate_simple(populationfile, generations, organisms,
         new_organisms = {}
         i = 0
         while i < int(population_size):
-            parentA = random.choice(organismList)
-            parentB = random.choice(organismList)
-
+            parentA = 0
+            parentB = 0
+            while parentA == parentB:
+                parentA = random.choice(organismList)
+                parentB = random.choice(organismList)
             chromosomeA1 = organisms[parentA]['genome'][0]
             chromosomeA2 = organisms[parentA]['genome'][1]
             chromosomeB1 = organisms[parentB]['genome'][0]
@@ -302,7 +311,10 @@ def simulate_simple(populationfile, generations, organisms,
                    'genome': [genomeA[random.randint(0, 1)], 
                               genomeB[random.randint(0, 1)]]}
             new_organisms[str(i)] = org
+            if i+1 % 100 == 0:
+                print("%s organisms produced" % str(i))
             i = i + 1
+        print("Total %s organisms produced" % str(i))
         _simulation_writeout(outputfile, new_organisms, headerData)
         organisms = new_organisms
 
@@ -429,6 +441,7 @@ def tabulate_allelic_counts(populationfile, ploidy=2):
                 exp_allele_counts[gene][allele])
     print("Chi Square Statistic : %s" % str(chiSq))
     print("Degrees of Freedom : %i" % df)
+    print("Normalized Chi Square Statistic : %s" % str(chiSq / (df + 1)))
 
 ######################################################################
 # Section 5: Utility operations
@@ -452,29 +465,91 @@ def combine_populations(populationfile1, populationfile2, outputfile):
     """
     populationfile1 = os.path.abspath(populationfile1)
     populationfile2 = os.path.abspath(populationfile2)
+    outputmapfile = outputfile + ".map"
     outputfile = os.path.abspath(outputfile)
     outputfile = open(outputfile, "w")
+    outputmapfile = os.path.abspath(outputmapfile)
+    outputmapfile = open(outputmapfile, "w")
+    print("Read population file %s" % str(populationfile1))
     (geneData1, alleleData1, organismData1, _) = \
         read_population_file(populationfile1, False)
+    print("Read population file %s" % str(populationfile2))
     (_, _, organismData2, _) = \
         read_population_file(populationfile2, False)
+    print("Combine populations")
     outputfile.write(geneData1 + "\n")
-    print(geneData1)
+    # print(geneData1)
     for allele in alleleData1:
         outputfile.write(allele + "\n")
-    print(alleleData1)
+    # print(alleleData1)
     count = 0
-    for org in organismData1 + organismData2:
+    for org in organismData1:
         genome = ["|".join(org[1][i]) for i in range(len(org[1]))]
         genome = ";".join(genome)
+        mapdata = "%s:%s>%s" % (populationfile1, str(org[0][0]), str(count))
+        print(mapdata)
+        outputmapfile.write(mapdata + "\n")
         org[0][0] = str(count)
-        organism = "|".join(["O"] + org[0])
+        organism = "O>" + "|".join(org[0])
         organismData = ">".join([organism, genome])
         outputfile.write(organismData + "\n")
-        print(organismData)
+        # print(organismData)
         count = count + 1
+    for org in organismData2:
+        genome = ["|".join(org[1][i]) for i in range(len(org[1]))]
+        genome = ";".join(genome)
+        mapdata = "%s:%s>%s" % (populationfile2, str(org[0][0]), str(count))
+        print(mapdata)
+        outputmapfile.write(mapdata + "\n")
+        org[0][0] = str(count)
+        organism = "O>" + "|".join(org[0])
+        organismData = ">".join([organism, genome])
+        outputfile.write(organismData + "\n")
+        # print(organismData)
+        count = count + 1
+    print("Total number of combined organisms = %s" % \
+        str(count))
+    outputmapfile.close()
     outputfile.close()
 
+def randomly_select_population(populationfile, outputfile, n):
+    """!
+    Function to randomly select n organisms from a population file into 
+    another population file.
+
+    Usage:
+
+        python island.py random --populationfile=test_pop --outputfile=test_pop.rand --n=30
+
+    @param populationfile String: Relative or absolute path of the 
+    population file to randomly select population from.
+    @param putputfile String: Relative or absolute path for writing 
+    out the randomly selected population file.
+    @param n Integer: Number of organisms to select.
+    """
+    populationfile = os.path.abspath(populationfile)
+    outputfile = os.path.abspath(outputfile)
+    print("Sample %s organisms from %s into %s" % \
+        (str(int(n)), populationfile, outputfile))
+    outputfile = open(outputfile, "w")
+    (geneData, alleleData, organismData, _) = \
+        read_population_file(populationfile, False)
+    outputfile.write(geneData + "\n")
+    # print(geneData)
+    for allele in alleleData:
+        outputfile.write(allele + "\n")
+    # print(alleleData)
+    if int(n) > len(organismData):
+        n = len(organismData)
+    random.shuffle(organismData)
+    for org in organismData[:int(n)]:
+        genome = ["|".join(org[1][i]) for i in range(len(org[1]))]
+        genome = ";".join(genome)
+        organism = "O>" + "|".join(org[0])
+        organismData = ">".join([organism, genome])
+        outputfile.write(organismData + "\n")
+        # print(organismData)
+    outputfile.close()
 ######################################################################
 # Section 6: Command-line executor
 ######################################################################
@@ -482,6 +557,7 @@ if __name__ == '__main__':
     exposed_functions = {
         'combinepop': combine_populations,
         'gpop': generate_population,
+        'random': randomly_select_population,
         'readpf': read_parameter_file,
         'readpop': read_population_file,
         'simulate': simulate_population,
